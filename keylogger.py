@@ -1,11 +1,7 @@
-from ast import With
 import datetime
-from hashlib import new
 import os
 import sys
 import time
-from queue import Queue
-from math import floor
 
 import keyboard
 import mouse
