@@ -1,10 +1,14 @@
+from ast import With
 import datetime
+from hashlib import new
 import os
 import sys
 import time
+from queue import Queue
 from math import floor
 
 import keyboard
+import mouse
 import wx
 import wx.adv
 
@@ -14,17 +18,25 @@ import wx.adv
 
 
 CURRENT_USER = os.environ.get('USERNAME' if sys.platform == 'win32' else 'USER')
-LOGFILE = os.path.abspath('.\\logs\\' + CURRENT_USER + '_keylog.csv')
-monitoring_stats = {'keys pressed': 0, 'start time': time.time()}
+LOGGING_FILE_PREFIX = os.path.abspath('.\\logs\\' + CURRENT_USER)
+KEYLOGFILE = LOGGING_FILE_PREFIX + '_keylog.csv'
+MOUSECLICKLOGFILE = LOGGING_FILE_PREFIX + '_mouseclicklog.csv'
+MOUSEWHEELLOGFILE = LOGGING_FILE_PREFIX + '_mousewheellog.csv'
+MOUSEMOVELOGFILE = LOGGING_FILE_PREFIX + '_mousemovelog.csv'
+monitoring_stats = {'keys pressed': 0, 'start time': time.time(), 'mouse events': 0}
 
+mouse_log = []
 
 def save(rerun=True):
-    record = keyboard.stop_recording()
+    key_record = keyboard.stop_recording()
+    mouse.unhook(mouse_log.append)
+
     if rerun:
         keyboard.start_recording()
+        mouse.hook(mouse_log.append)
 
-    with open(LOGFILE, 'a') as file:
-        for entry in record:
+    with open(KEYLOGFILE, 'at', encoding='utf-8') as file:
+        for entry in key_record:
             file.write(str(entry.time))
             file.write(',')
 
@@ -40,24 +52,72 @@ def save(rerun=True):
             file.write(entry.name)
             file.write('\n')
 
+    with open(MOUSECLICKLOGFILE, 'at') as clicks:
+        with open(MOUSEMOVELOGFILE, 'at', encoding='utf-8') as moves:
+            with open(MOUSEWHEELLOGFILE, 'at', encoding='utf-8') as wheel:
+                for mouse_evt in mouse_log:
+                    if type(mouse_evt) == mouse.ButtonEvent:
+                        clicks.write(str(mouse_evt.time))
+                        clicks.write(',')
+
+                        clicks.write(str(mouse_evt.button))
+                        clicks.write(',')
+
+                        clicks.write(str(mouse_evt.event_type))
+                        clicks.write('\n')
+
+                    elif type(mouse_evt) == mouse.MoveEvent:
+                        moves.write(str(mouse_evt.time))
+                        moves.write(',')
+
+                        moves.write(str(mouse_evt.x))
+                        moves.write(',')
+
+                        moves.write(str(mouse_evt.y))
+                        moves.write('\n')
+
+                    elif type(mouse_evt) == mouse.WheelEvent:
+                        wheel.write(str(mouse_evt.time))
+                        wheel.write(',')
+
+                        wheel.write(str(mouse_evt.delta))
+                        wheel.write('\n')
+
+    monitoring_stats['mouse events'] += len(mouse_log)
+    mouse_log.clear()
+
     if rerun:
-        monitoring_stats['keys pressed'] += len(record)
+        monitoring_stats['keys pressed'] += len(key_record)
         app.txt_recorded_keys.SetLabel(str(monitoring_stats['keys pressed']))
+        app.txt_recorded_mouse_evts.SetLabel(str(monitoring_stats['mouse events']))
 
 
-def keylog_init():
+def init_logging():
     try:
         os.mkdir('.\\logs')
     except FileExistsError:
         pass
 
-    if os.path.exists(LOGFILE):
+    if os.path.exists(KEYLOGFILE):
         size = 0
-        with open(LOGFILE) as log:
+        with open(KEYLOGFILE) as log:
             for line in log.readlines():
                 size += 1
         monitoring_stats['keys pressed'] = size - 1
 
+    if os.path.exists(MOUSECLICKLOGFILE):
+        with open(MOUSECLICKLOGFILE, 'rt', encoding='utf-8') as log:
+            monitoring_stats['mouse events'] += len(log.readlines())
+
+    if os.path.exists(MOUSEMOVELOGFILE):
+        with open(MOUSEMOVELOGFILE, 'rt', encoding='utf-8') as log:
+            monitoring_stats['mouse events'] += len(log.readlines())
+
+    if os.path.exists(MOUSEWHEELLOGFILE):
+        with open(MOUSEWHEELLOGFILE, 'rt', encoding='utf-8') as log:
+            monitoring_stats['mouse events'] += len(log.readlines())
+
+    mouse.hook(mouse_log.append)
     keyboard.start_recording()
 
 
@@ -109,30 +169,33 @@ class TrayIcon(wx.adv.TaskBarIcon):
         app.ExitMainLoop()
 
 
-class KeyLogUI(wx.App):
+class LoggingUI(wx.App):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.bttn_pause_lbl_pause = 'Aufzeichnung pausieren'
         self.bttn_pause_lbl_play = 'Aufzeichnung fortsetzen'
 
-        self.frame = wx.Frame(parent=None, size=wx.Size(750, 200))
+        self.frame = wx.Frame(parent=None, size=wx.Size(750, 215))
         pane = wx.Panel(parent=self.frame)
 
         wx.StaticText(parent=pane, pos=(100, 20), label='Dies ist ein Keylogger!')
         wx.StaticText(parent=pane, pos=(20, 40), label='-- Statistik --')
         wx.StaticText(parent=pane, pos=(20, 55), label='Aufgezeichnete Tastaturevents:')
-        wx.StaticText(parent=pane, pos=(20, 70), label='Laufzeit (dieser Session):')
-        wx.StaticText(parent=pane, pos=(20, 85), label='Speicherort der Logdateien:')
+        wx.StaticText(parent=pane, pos=(20, 70), label='Aufgezeichnete Mausevents:')
+        wx.StaticText(parent=pane, pos=(20, 85), label='Laufzeit (dieser Session):')
+        wx.StaticText(parent=pane, pos=(20, 100), label='Speicherort der Logdateien:')
 
         self.txt_recorded_keys = \
             wx.StaticText(parent=pane, pos=(200, 55), label=str(monitoring_stats['keys pressed']))
+        self.txt_recorded_mouse_evts = \
+            wx.StaticText(parent=pane, pos=(200, 70), label=str(monitoring_stats['mouse events']))
         self.txt_time = \
-            wx.StaticText(parent=pane, pos=(200, 70), label='0')
-        wx.StaticText(parent=pane, pos=(200, 85), label=LOGFILE)
+            wx.StaticText(parent=pane, pos=(200, 85), label='0')
+        wx.StaticText(parent=pane, pos=(200, 100), label=LOGGING_FILE_PREFIX + '*')
 
-        self.bttn_exit = wx.Button(parent=pane, pos=(20, 110), label='Programm beenden')
-        self.bttn_pause = wx.Button(parent=pane, pos=(200, 110), label=self.bttn_pause_lbl_pause)
+        self.bttn_exit = wx.Button(parent=pane, pos=(20, 125), label='Programm beenden')
+        self.bttn_pause = wx.Button(parent=pane, pos=(200, 125), label=self.bttn_pause_lbl_pause)
 
         self.do_exit = False
         self.is_paused = False
@@ -204,9 +267,9 @@ class KeyLogUI(wx.App):
 
 
 if __name__ == '__main__':
-    keylog_init()
+    init_logging()
 
-    app = KeyLogUI()
+    app = LoggingUI()
     app.MainLoop()
 
     if not app.is_paused:
