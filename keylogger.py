@@ -15,10 +15,11 @@ import wx.adv
 # init some constants
 CURRENT_USER = os.environ.get('USERNAME' if sys.platform == 'win32' else 'USER')
 LOGGING_FILE_PREFIX = os.path.abspath('.\\logs\\' + CURRENT_USER)
-KEYLOGFILE = LOGGING_FILE_PREFIX + '_keylog.csv'
+
+KEYLOGFILE =        LOGGING_FILE_PREFIX + '_keylog.csv'
 MOUSECLICKLOGFILE = LOGGING_FILE_PREFIX + '_mouseclicklog.csv'
 MOUSEWHEELLOGFILE = LOGGING_FILE_PREFIX + '_mousewheellog.csv'
-MOUSEMOVELOGFILE = LOGGING_FILE_PREFIX + '_mousemovelog.csv'
+MOUSEMOVELOGFILE =  LOGGING_FILE_PREFIX + '_mousemovelog.csv'
 
 # these flags will be shown in the UI
 monitoring_stats = {
@@ -33,13 +34,23 @@ mouse_log = []
 # TODO: Add comments & docstrings
 
 def save(rerun=True):
-    key_record = keyboard.stop_recording()
-    mouse.unhook(mouse_log.append)
+    """Save the data that has been colleted since the
+    initialization or the last call.
+    If the `rerun` flag is set, the method can be called
+    again afterwards to log any data that has been produced
+    since, if it is not set, `init_logging` has to be called
+    before another call to `save`."""
 
+    # collect keyboard data, mouse data is already in `mouse_log`
+    key_record = keyboard.stop_recording()
+
+    # rerun keyboard recording or stop mouse recording
     if rerun:
         keyboard.start_recording()
-        mouse.hook(mouse_log.append)
+    else:
+        mouse.unhook(mouse_log.append)
 
+    # write key data to file
     with open(KEYLOGFILE, 'at', encoding='utf-8') as file:
         for entry in key_record:
             file.write(str(entry.time))
@@ -54,9 +65,13 @@ def save(rerun=True):
             file.write('1' if entry.is_keypad else '0')
             file.write(',')
 
+            # yes, the name can be a literal comma, which breaks the
+            # csv format, but since the data is parsed via python's
+            # `split`, the `maxsplit` parameter can handle that
             file.write(entry.name)
             file.write('\n')
 
+    # write mouse data to file, depending on event type
     with open(MOUSECLICKLOGFILE, 'at') as clicks:
         with open(MOUSEMOVELOGFILE, 'at', encoding='utf-8') as moves:
             with open(MOUSEWHEELLOGFILE, 'at', encoding='utf-8') as wheel:
@@ -88,30 +103,41 @@ def save(rerun=True):
                         wheel.write(str(mouse_evt.delta))
                         wheel.write('\n')
 
+    # update stats
     monitoring_stats['mouse events'] += len(mouse_log)
+    monitoring_stats['keys pressed'] += len(key_record)
+
+    # we don't want to log the mouse events again
     mouse_log.clear()
 
-    if rerun:
-        monitoring_stats['keys pressed'] += len(key_record)
-        app.txt_recorded_keys.SetLabel(str(monitoring_stats['keys pressed']))
-        app.txt_recorded_mouse_evts.SetLabel(
-            str(monitoring_stats['mouse events'])
-        )
+    # update stat labels
+    app.txt_recorded_keys.SetLabel(str(monitoring_stats['keys pressed']))
+    app.txt_recorded_mouse_evts.SetLabel(
+        str(monitoring_stats['mouse events'])
+    )
 
 
 def init_logging(check_files):
+    """Start logging key/mouse events.
+    If check_files is True, the necessary folder is created and the
+    monitoring stats are read from the files."""
+
+    # start mouse & key logging
+    mouse.hook(mouse_log.append)
+    keyboard.start_recording()
+
     if check_files:
+
         try:
             os.mkdir('.\\logs')
         except FileExistsError:
-            pass
+            monitoring_stats['keys pressed'] = 0
+            monitoring_stats['mouse events'] = 0
+            return  # the files don't exist, so we're done
 
         if os.path.exists(KEYLOGFILE):
-            size = 0
-            with open(KEYLOGFILE) as log:
-                for line in log.readlines():
-                    size += 1
-            monitoring_stats['keys pressed'] = size - 1
+            with open(KEYLOGFILE, 'rt', encoding='utf-8') as log:
+                monitoring_stats['keys pressed'] = len(log.readlines())
 
         if os.path.exists(MOUSECLICKLOGFILE):
             with open(MOUSECLICKLOGFILE, 'rt', encoding='utf-8') as log:
@@ -124,9 +150,6 @@ def init_logging(check_files):
         if os.path.exists(MOUSEWHEELLOGFILE):
             with open(MOUSEWHEELLOGFILE, 'rt', encoding='utf-8') as log:
                 monitoring_stats['mouse events'] += len(log.readlines())
-
-    mouse.hook(mouse_log.append)
-    keyboard.start_recording()
 
 
 # ------------------------------------------------------------------------- #
