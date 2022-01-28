@@ -12,16 +12,25 @@ import wx.adv
 #                             LOGGING STUFF                                 #
 # ------------------------------------------------------------------------- #
 
-
+# init some constants
 CURRENT_USER = os.environ.get('USERNAME' if sys.platform == 'win32' else 'USER')
 LOGGING_FILE_PREFIX = os.path.abspath('.\\logs\\' + CURRENT_USER)
 KEYLOGFILE = LOGGING_FILE_PREFIX + '_keylog.csv'
 MOUSECLICKLOGFILE = LOGGING_FILE_PREFIX + '_mouseclicklog.csv'
 MOUSEWHEELLOGFILE = LOGGING_FILE_PREFIX + '_mousewheellog.csv'
 MOUSEMOVELOGFILE = LOGGING_FILE_PREFIX + '_mousemovelog.csv'
-monitoring_stats = {'keys pressed': 0, 'start time': time.time(), 'mouse events': 0}
+
+# these flags will be shown in the UI
+monitoring_stats = {
+    'keys pressed': 0,
+    'start time': time.time(),
+    'mouse events': 0
+}
 
 mouse_log = []
+
+
+# TODO: Add comments & docstrings
 
 def save(rerun=True):
     key_record = keyboard.stop_recording()
@@ -85,33 +94,36 @@ def save(rerun=True):
     if rerun:
         monitoring_stats['keys pressed'] += len(key_record)
         app.txt_recorded_keys.SetLabel(str(monitoring_stats['keys pressed']))
-        app.txt_recorded_mouse_evts.SetLabel(str(monitoring_stats['mouse events']))
+        app.txt_recorded_mouse_evts.SetLabel(
+            str(monitoring_stats['mouse events'])
+        )
 
 
-def init_logging():
-    try:
-        os.mkdir('.\\logs')
-    except FileExistsError:
-        pass
+def init_logging(check_files):
+    if check_files:
+        try:
+            os.mkdir('.\\logs')
+        except FileExistsError:
+            pass
 
-    if os.path.exists(KEYLOGFILE):
-        size = 0
-        with open(KEYLOGFILE) as log:
-            for line in log.readlines():
-                size += 1
-        monitoring_stats['keys pressed'] = size - 1
+        if os.path.exists(KEYLOGFILE):
+            size = 0
+            with open(KEYLOGFILE) as log:
+                for line in log.readlines():
+                    size += 1
+            monitoring_stats['keys pressed'] = size - 1
 
-    if os.path.exists(MOUSECLICKLOGFILE):
-        with open(MOUSECLICKLOGFILE, 'rt', encoding='utf-8') as log:
-            monitoring_stats['mouse events'] += len(log.readlines())
+        if os.path.exists(MOUSECLICKLOGFILE):
+            with open(MOUSECLICKLOGFILE, 'rt', encoding='utf-8') as log:
+                monitoring_stats['mouse events'] += len(log.readlines())
 
-    if os.path.exists(MOUSEMOVELOGFILE):
-        with open(MOUSEMOVELOGFILE, 'rt', encoding='utf-8') as log:
-            monitoring_stats['mouse events'] += len(log.readlines())
+        if os.path.exists(MOUSEMOVELOGFILE):
+            with open(MOUSEMOVELOGFILE, 'rt', encoding='utf-8') as log:
+                monitoring_stats['mouse events'] += len(log.readlines())
 
-    if os.path.exists(MOUSEWHEELLOGFILE):
-        with open(MOUSEWHEELLOGFILE, 'rt', encoding='utf-8') as log:
-            monitoring_stats['mouse events'] += len(log.readlines())
+        if os.path.exists(MOUSEWHEELLOGFILE):
+            with open(MOUSEWHEELLOGFILE, 'rt', encoding='utf-8') as log:
+                monitoring_stats['mouse events'] += len(log.readlines())
 
     mouse.hook(mouse_log.append)
     keyboard.start_recording()
@@ -249,7 +261,7 @@ class LoggingUI(wx.App):
 
     def pause_resume(self, _):
         if self.is_paused:
-            keyboard.start_recording()
+            init_logging(check_files=False)
             self.save_timer.Start()
             self.bttn_pause.SetLabel(self.bttn_pause_lbl_pause)
             self.tray_icon.SetIcon(self.tray_icon.icon, self.tray_icon.tooltip)
@@ -263,7 +275,7 @@ class LoggingUI(wx.App):
 
 
 if __name__ == '__main__':
-    init_logging()
+    init_logging(check_files=True)
 
     app = LoggingUI()
     app.MainLoop()
